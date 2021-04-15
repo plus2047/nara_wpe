@@ -565,7 +565,15 @@ def wpe_v6(Y, taps=10, delay=3, iterations=3, psd_context=0, statistics_mode='fu
     return X
 
 
-def wpe_v7(Y, taps=10, delay=3, iterations=3, psd_context=0, statistics_mode='full'):
+def wpe_v7(
+        Y,
+        taps=10,
+        delay=3,
+        iterations=3,
+        psd_context=0,
+        statistics_mode='full',
+        return_filter=False
+):
     """
     Batched and modular WPE version.
 
@@ -597,10 +605,33 @@ def wpe_v7(Y, taps=10, delay=3, iterations=3, psd_context=0, statistics_mode='fu
         raise ValueError(statistics_mode)
 
     for iteration in range(iterations):
+        # inverse_power.shape == (stft window length, L)
         inverse_power = get_power_inverse(X, psd_context=psd_context)
         G = get_filter_matrix_v7(Y=Y[s], Y_tilde=Y_tilde[s], inverse_power=inverse_power[s])
+        # Y.shape == X.shape == (stft_window_length, channel_num, L)
+        # G.shape == (stft_window_length, taps * chan_num, chan_num)
+        # Y_tilde.shape == (stft_window_length, taps * chan_num, L)
+        # perform filter: X = Y - np.matmul(hermite(filter_matrix), Y_tilde)
         X = perform_filter_operation_v5(Y=Y, Y_tilde=Y_tilde, filter_matrix=G)
-    return X
+
+    # # those code helps understanding
+    # X_list = []
+    # stft_length, chan_num, L = Y.shape
+    # for t in range(L):
+    #     Yt = Y[:, :, t][:, :, None]
+    #     Xt = np.copy(Yt)
+    #     for tau in range(delay, delay + taps):
+    #         if tau >= t:
+    #             break
+    #         _tau = tau - delay
+    #         Gt = G[:, chan_num * _tau:chan_num * (_tau + 1), :]
+    #         Y_tilde_t = Y[:, :, t - tau][:, :, None]
+    #         Xt -= np.matmul(hermite(Gt), Y_tilde_t)
+    #     X_list.append(Xt)
+    # X_ = np.concatenate(X_list, axis=-1)
+    # return X_
+
+    return X, G if return_filter else X
 
 
 def wpe_v8(
@@ -1039,7 +1070,7 @@ def get_power(signal, psd_context=0):
 
     power = np.mean(abs_square(signal), axis=-2)
 
-    if psd_context is not 0:
+    if psd_context != 0:
         if isinstance(psd_context, tuple):
             context = psd_context[0] + 1 + psd_context[1]
         else:
